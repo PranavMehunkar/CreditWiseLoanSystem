@@ -1,89 +1,136 @@
-# app.py
-
 import streamlit as st
 import pandas as pd
+import numpy as np
 import pickle
+
+st.set_page_config(page_title="CreditWise Loan Approval", page_icon="💰")
+st.title("💰 CreditWise Loan Approval Prediction")
 
 # =========================
 # Load artifacts
 # =========================
 @st.cache_resource
 def load_artifacts():
-    model = pickle.load(open("logistic_model.pkl", "rb"))
-    encoder = pickle.load(open("encoder.pkl", "rb"))
-    scaler = pickle.load(open("scaler.pkl", "rb"))
-    feature_order = pickle.load(open("feature_order.pkl", "rb"))
-    return model, encoder, scaler, feature_order
+    try:
+        with open("logistic_model.pkl", "rb") as f:
+            logistic_model = pickle.load(f)
+        with open("knn_model.pkl", "rb") as f:
+            knn_model = pickle.load(f)
+        with open("nb_model.pkl", "rb") as f:
+            nb_model = pickle.load(f)
+        with open("scaler.pkl", "rb") as f:
+            scaler = pickle.load(f)
+        with open("encoder.pkl", "rb") as f:
+            encoder = pickle.load(f)
+        with open("edu_le.pkl", "rb") as f:
+            le_edu = pickle.load(f)
+        with open("feature_order.pkl", "rb") as f:
+            feature_order = pickle.load(f)
+        return logistic_model, knn_model, nb_model, scaler, encoder, le_edu, feature_order
+    except FileNotFoundError:
+        st.error("⚠️ Some artifact files are missing! Upload all .pkl files.")
+        st.stop()
 
-model, encoder, scaler, feature_order = load_artifacts()
-
-st.title("🏦 CreditWise Loan Approval System")
+logistic_model, knn_model, nb_model, scaler, encoder, le_edu, feature_order = load_artifacts()
 
 # =========================
-# User Inputs
+# Model selector
 # =========================
-Age = st.number_input("Age", 18, 70, 30)
-Income = st.number_input("Annual Income", 10000, 200000, 80000)
-Credit_Score = st.number_input("Credit Score", 300, 900, 750)
-DTI_Ratio = st.slider("Debt-to-Income Ratio", 0.0, 1.0, 0.25)
-Loan_Amount = st.number_input("Loan Amount", 50000, 1000000, 300000)
-Existing_Loans = st.number_input("Existing Loans", 0, 5, 0)
-Dependents = st.number_input("Dependents", 0, 5, 1)
-Collateral_Value = st.number_input("Collateral Value", 0, 2000000, 600000)
+model_choice = st.selectbox("Choose a Model", ["Logistic Regression", "KNN", "Naive Bayes"])
+if model_choice == "Logistic Regression":
+    model = logistic_model
+elif model_choice == "KNN":
+    model = knn_model
+else:
+    model = nb_model
 
-Employment_Status = st.selectbox("Employment Status", ["Employed", "Self-Employed", "Unemployed"])
-Education_Level = st.selectbox("Education Level", ["Graduate", "Postgraduate", "High School"])
-Property_Area = st.selectbox("Property Area", ["Urban", "Semiurban", "Rural"])
+# =========================
+# User Input
+# =========================
+st.subheader("Enter Applicant Details:")
+
+# Numeric inputs
+Age = st.number_input("Age", 18, 100, 30)
+Applicant_Income = st.number_input("Applicant Income", 0, 1000000, 50000)
+Coapplicant_Income = st.number_input("Coapplicant Income", 0, 1000000, 0)
+Credit_Score = st.number_input("Credit Score", 300, 900, 650)
+DTI_Ratio = st.number_input("Debt-to-Income Ratio", 0.0, 100.0, 20.0)
+Savings = st.number_input("Savings", 0, 1000000, 10000)
+Existing_Loans = st.number_input("Existing Loans", 0, 100, 0)
+Collateral_Value = st.number_input("Collateral Value", 0, 1000000, 20000)
+Dependents = st.number_input("Number of Dependents", 0, 10, 0)
+Loan_Amount = st.number_input("Loan Amount", 0, 1000000, 20000)
+
+# Categorical inputs
+Education_Level = st.selectbox("Education Level", ["Graduate", "Not Graduate"])
+Employment_Status = st.selectbox("Employment Status", ["Employed", "Unemployed", "Self-Employed"])
+Marital_Status = st.selectbox("Marital Status", ["Single", "Married", "Divorced"])
+Loan_Purpose = st.selectbox("Loan Purpose", ["Home", "Car", "Education", "Business", "Other"])
+Property_Area = st.selectbox("Property Area", ["Urban", "Rural", "Semiurban"])
 Gender = st.selectbox("Gender", ["Male", "Female"])
+Employer_Category = st.selectbox("Employer Category", ["Private", "Government", "Other"])
+
+# =========================
+# Create DataFrame
+# =========================
+input_dict = {
+    "Age": Age,
+    "Applicant_Income": Applicant_Income,
+    "Coapplicant_Income": Coapplicant_Income,
+    "Credit_Score": Credit_Score,
+    "DTI_Ratio": DTI_Ratio,
+    "Savings": Savings,
+    "Existing_Loans": Existing_Loans,
+    "Collateral_Value": Collateral_Value,
+    "Dependents": Dependents,
+    "Loan_Amount": Loan_Amount,
+    "Education_Level": le_edu.transform([Education_Level])[0],
+    "Employment_Status": Employment_Status,
+    "Marital_Status": Marital_Status,
+    "Loan_Purpose": Loan_Purpose,
+    "Property_Area": Property_Area,
+    "Gender": Gender,
+    "Employer_Category": Employer_Category
+}
+
+input_df = pd.DataFrame([input_dict])
+
+# =========================
+# Encode categorical columns (excluding Education_Level)
+# =========================
+cat_cols = ["Employment_Status","Marital_Status","Loan_Purpose",
+            "Property_Area","Gender","Employer_Category"]
+
+encoded = encoder.transform(input_df[cat_cols])
+encoded_df = pd.DataFrame(encoded, columns=encoder.get_feature_names_out(cat_cols))
+final_df = pd.concat([input_df.drop(columns=cat_cols), encoded_df], axis=1)
+
+# =========================
+# Add missing columns if any
+# =========================
+missing_cols = set(feature_order) - set(final_df.columns)
+for col in missing_cols:
+    final_df[col] = 0
+
+final_df = final_df[feature_order]
+
+# =========================
+# Scale features
+# =========================
+final_scaled = scaler.transform(final_df)
 
 # =========================
 # Predict
 # =========================
-if st.button("Check Loan Approval"):
+if st.button("Predict Loan Approval"):
+    pred = model.predict(final_scaled)[0]
+    proba = model.predict_proba(final_scaled)[0][1] if hasattr(model, "predict_proba") else None
 
-    input_df = pd.DataFrame([{
-        "Age": Age,
-        "Income": Income,
-        "Credit_Score": Credit_Score,
-        "DTI_Ratio": DTI_Ratio,
-        "Loan_Amount": Loan_Amount,
-        "Existing_Loans": Existing_Loans,
-        "Dependents": Dependents,
-        "Collateral_Value": Collateral_Value,
-        "Employment_Status": Employment_Status,
-        "Education_Level": Education_Level,
-        "Property_Area": Property_Area,
-        "Gender": Gender
-    }])
-
-    num_cols = input_df.select_dtypes(include=["number"]).columns.tolist()
-    cat_cols = input_df.select_dtypes(include=["object"]).columns.tolist()
-
-    input_df[num_cols] = input_df[num_cols].fillna(0)
-    input_df[cat_cols] = input_df[cat_cols].fillna("Unknown")
-
-    encoded = encoder.transform(input_df[cat_cols])
-    encoded_df = pd.DataFrame(
-        encoded,
-        columns=encoder.get_feature_names_out(cat_cols)
-    )
-
-    final_df = pd.concat(
-        [input_df[num_cols].reset_index(drop=True),
-         encoded_df.reset_index(drop=True)],
-        axis=1
-    )
-
-    # 🔑 FORCE correct feature order
-    final_df = final_df.reindex(columns=feature_order, fill_value=0)
-
-    final_scaled = scaler.transform(final_df)
-
-    proba = model.predict_proba(final_scaled)[0][1]
-
-    st.write(f"Approval Probability: **{proba:.2f}**")
-
-    if proba >= 0.5:
-        st.success("✅ Loan Approved")
+    st.subheader("Prediction Result:")
+    if pred == 1:
+        st.success("✅ Loan will be Approved")
     else:
-        st.error("❌ Loan Rejected")
+        st.error("❌ Loan will NOT be Approved")
+
+    if proba is not None:
+        st.info(f"Prediction Probability: {proba*100:.2f}%")
