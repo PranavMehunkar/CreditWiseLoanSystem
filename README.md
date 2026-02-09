@@ -4,7 +4,6 @@ CreditWise Loan System is a machine learning project that predicts loan approval
 <h2>Project Structure</h2>
 <ul><li>train_model.ipynb – Model for training and evaluation</li></ul>
 <ul><li>app.py – Complete end-to-end ML pipeline</li></ul>
-<ul><li>loan_approval_data.csv – Dataset used for training and evaluation</li></ul>
 
 <h2>Models Used</h2>
 The following models were trained and evaluated:<br>
